@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Skinstinct Draft Tool</title>
+<style>
+  :root {
+    --bg: #0b0b0c;
+    --panel: #161618;
+    --border: #2a2a2d;
+    --text: #ececec;
+    --muted: #9a9a9e;
+    --accent: #7dd3c0;
+    --accent-text: #08201b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px 64px;
+  }
+  main {
+    width: 100%;
+    max-width: 640px;
+  }
+  h1 {
+    font-size: 1.3rem;
+    margin: 0 0 4px;
+  }
+  p.sub {
+    color: var(--muted);
+    margin: 0 0 24px;
+    font-size: 0.9rem;
+    line-height: 1.4;
+  }
+  textarea {
+    width: 100%;
+    min-height: 140px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    padding: 14px;
+    font-size: 1rem;
+    font-family: inherit;
+    resize: vertical;
+  }
+  textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  button {
+    margin-top: 12px;
+    width: 100%;
+    background: var(--accent);
+    color: var(--accent-text);
+    border: none;
+    border-radius: 10px;
+    padding: 14px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  #status {
+    margin-top: 14px;
+    font-size: 0.9rem;
+    color: var(--muted);
+    min-height: 1.2em;
+  }
+  #result {
+    margin-top: 20px;
+    display: none;
+  }
+  #result.visible {
+    display: block;
+  }
+  #draftText {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    white-space: pre-wrap;
+    line-height: 1.5;
+    font-size: 0.98rem;
+  }
+  .actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .actions button {
+    margin-top: 0;
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-weight: 500;
+  }
+  footer {
+    margin-top: 32px;
+    color: var(--muted);
+    font-size: 0.8rem;
+    line-height: 1.5;
+  }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Skinstinct draft tool</h1>
+  <p class="sub">
+    Paste a raw note below and get a LinkedIn draft back in Meera's voice.
+    This calls the same drafting logic as the Telegram bot
+    (<a href="https://t.me/Baconhamporkbot" style="color:#7dd3c0">@Baconhamporkbot</a>) &mdash;
+    it just skips the trip through Telegram.
+  </p>
+
+  <textarea id="note" placeholder="e.g. Had a message from a customer today. She said the serum stopped working after she switched moisturisers..."></textarea>
+  <button id="submit">Draft it</button>
+  <div id="status"></div>
+
+  <div id="result">
+    <div id="draftText"></div>
+    <div class="actions">
+      <button id="copyBtn">Copy text</button>
+      <button id="clearBtn">Start over</button>
+    </div>
+  </div>
+
+  <footer>
+    Notes sent here aren't saved anywhere and aren't sent to Telegram &mdash;
+    this page is just a second way to trigger the same drafting call.
+    Drop real notes into the bot chat if you want them saved there instead.
+  </footer>
+</main>
+
+<script>
+  const noteEl = document.getElementById("note");
+  const submitBtn = document.getElementById("submit");
+  const statusEl = document.getElementById("status");
+  const resultEl = document.getElementById("result");
+  const draftTextEl = document.getElementById("draftText");
+  const copyBtn = document.getElementById("copyBtn");
+  const clearBtn = document.getElementById("clearBtn");
+
+  async function submitNote() {
+    const note = noteEl.value.trim();
+    if (!note) {
+      statusEl.textContent = "Type a note first.";
+      return;
+    }
+    submitBtn.disabled = true;
+    statusEl.textContent = "Drafting… this usually takes 5-15 seconds.";
+    resultEl.classList.remove("visible");
+
+    try {
+      const resp = await fetch("/api/draft", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ note }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data.error || `Request failed (${resp.status})`);
+      }
+      draftTextEl.textContent = data.draft;
+      resultEl.classList.add("visible");
+      statusEl.textContent = "Done.";
+    } catch (err) {
+      statusEl.textContent = "Error: " + (err.message || String(err));
+    } finally {
+      submitBtn.disabled = false;
+    }
+  }
+
+  submitBtn.addEventListener("click", submitNote);
+  noteEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submitNote();
+  });
+
+  copyBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(draftTextEl.textContent);
+      copyBtn.textContent = "Copied";
+      setTimeout(() => (copyBtn.textContent = "Copy text"), 1500);
+    } catch (_) {
+      statusEl.textContent = "Couldn't copy automatically — select the text manually.";
+    }
+  });
+
+  clearBtn.addEventListener("click", () => {
+    noteEl.value = "";
+    resultEl.classList.remove("visible");
+    statusEl.textContent = "";
+    noteEl.focus();
+  });
+</script>
+</body>
+</html>
