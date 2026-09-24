@@ -158,7 +158,7 @@
       return;
     }
     submitBtn.disabled = true;
-    statusEl.textContent = "Drafting… this usually takes 5-15 seconds.";
+    statusEl.textContent = "Running the full pipeline (triage, facts, research, draft, verify)… this can take 30-60 seconds.";
     resultEl.classList.remove("visible");
 
     try {
@@ -171,9 +171,9 @@
       if (!resp.ok) {
         throw new Error(data.error || `Request failed (${resp.status})`);
       }
-      draftTextEl.textContent = data.draft;
+      draftTextEl.textContent = data.message;
       resultEl.classList.add("visible");
-      statusEl.textContent = "Done.";
+      statusEl.textContent = data.status === "DRAFT" ? "Done." : `Not drafted — ${data.status}.`;
     } catch (err) {
       statusEl.textContent = "Error: " + (err.message || String(err));
     } finally {
