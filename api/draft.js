@@ -1,4 +1,4 @@
-import { draftPost } from "../lib/voice.js";
+import { runPipeline } from "../lib/pipeline.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -13,8 +13,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const draft = await draftPost(note.trim());
-    res.status(200).json({ draft });
+    const result = await runPipeline(note.trim());
+    res.status(200).json(result);
   } catch (err) {
     const detail = err && err.message ? err.message : String(err);
     console.error("draft error:", detail);
