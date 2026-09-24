@@ -7,14 +7,22 @@ import { runPipeline } from "../lib/pipeline.js";
 import { judgeAgainstRubric, totalScore } from "../lib/rubricJudge.js";
 import { BARRIER_NOTE, ECZEMA_NOTE, BRANDED_STUDY_NOTE } from "./fixtures.js";
 
-function chosenAttempt(result) {
-  return result.log.chosenAttempt === "attempt1" ? result.log.attempt1 : (result.log.attempt2 || result.log.attempt1);
+// IMPORTANT: log.attempt1/attempt2's draftText is the PRE-strip snapshot,
+// captured before the hard backstop removes any unsupported sentence that
+// survived retry. It's useful for debugging what the model originally
+// produced, but it is NOT what actually gets sent. The only source of
+// truth for "what did Meera actually receive" is result.message - so
+// every acceptance check here reads the DRAFT section out of the real
+// rendered message, not the log.
+function extractDraftSection(message) {
+  const match = message.match(/DRAFT:\n([\s\S]*?)\n\nALTERNATIVE OPENING:/);
+  return match ? match[1] : "";
 }
 
 test("test case 2 (barrier note): acceptance criteria from round 2", async () => {
   const result = await runPipeline(BARRIER_NOTE);
   assert.equal(result.status, "DRAFT");
-  const { draftText } = chosenAttempt(result);
+  const draftText = extractDraftSection(result.message);
 
   // Header intact.
   assert.ok(result.message.startsWith("SOURCE NOTE:"));
@@ -37,11 +45,13 @@ test("test case 2 (barrier note): acceptance criteria from round 2", async () =>
     assert.ok(/dermatologist/i.test(draftText), "genetic-condition case should mention a dermatologist");
   }
 
-  // No unsupported claims reach the final message.
-  const stillUnsupported = chosenAttempt(result).unsupported.filter((u) => draftText.includes(u.sentence));
+  // No unsupported claims reach the final message - check the originally
+  // flagged sentences against the ACTUAL delivered draft (post-strip).
+  const originalUnsupported = (result.log.chosenAttempt === "attempt1" ? result.log.attempt1 : (result.log.attempt2 || result.log.attempt1)).unsupported;
+  const stillUnsupported = originalUnsupported.filter((u) => draftText.includes(u.sentence));
   assert.equal(stillUnsupported.length, 0, `unsupported sentence(s) reached the draft: ${JSON.stringify(stillUnsupported)}`);
 
-  // Rhythm and repetition.
+  // Rhythm and repetition, measured on what was actually sent.
   const sentences = draftText.split(/(?<=[.!?])\s+/).filter(Boolean);
   const shortRatio = sentences.filter((s) => s.trim().split(/\s+/).length <= 8).length / sentences.length;
   assert.ok(shortRatio >= 0.15, `only ${Math.round(shortRatio * 100)}% short sentences (want 15%+)`);
@@ -53,7 +63,7 @@ test("test case 2 (barrier note): acceptance criteria from round 2", async () =>
 test("eczema note: points to a dermatologist, gives no management advice", async () => {
   const result = await runPipeline(ECZEMA_NOTE);
   if (result.status !== "DRAFT") return; // triage may reasonably PARK/COMBINE this
-  const { draftText } = chosenAttempt(result);
+  const draftText = extractDraftSection(result.message);
   assert.ok(/dermatologist/i.test(draftText), "should point to a dermatologist");
   assert.ok(
     !/(should use|treat it with|manage (it|the|your) (with|by))/i.test(draftText),
@@ -64,7 +74,7 @@ test("eczema note: points to a dermatologist, gives no management advice", async
 test("branded-study note: brand name (if a source is used) never reaches the draft", async () => {
   const result = await runPipeline(BRANDED_STUDY_NOTE);
   if (result.status !== "DRAFT") return;
-  const { draftText } = chosenAttempt(result);
+  const draftText = extractDraftSection(result.message);
   // Can't assert a specific brand name without knowing what Google News
   // actually returns for this query at run time - the real check is
   // structural: no angle should reach the draft with brandNamesToScrub
