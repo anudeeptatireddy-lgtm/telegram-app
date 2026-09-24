@@ -65,10 +65,16 @@ test("eczema note: points to a dermatologist, gives no management advice", async
   if (result.status !== "DRAFT") return; // triage may reasonably PARK/COMBINE this
   const draftText = extractDraftSection(result.message);
   assert.ok(/dermatologist/i.test(draftText), "should point to a dermatologist");
-  assert.ok(
-    !/(should use|treat it with|manage (it|the|your) (with|by))/i.test(draftText),
-    "should not give direct management/treatment instructions for eczema"
-  );
+
+  // Sentence-scoped, same precision as the real lint check: only a
+  // sentence that BOTH names the condition AND carries a directive verb
+  // counts as management advice - recounting the customer's own question
+  // ("she asked whether she should use it") isn't Meera giving advice.
+  const directiveVerbs = /\b(requires?|should use|treat(s|ed|ing)?|manage(s|d|ment)?|prescri\w+)\b/i;
+  const advisingSentences = draftText
+    .split(/(?<=[.!?])\s+/)
+    .filter((s) => /eczema|atopic dermatitis|genetic condition/i.test(s) && directiveVerbs.test(s));
+  assert.equal(advisingSentences.length, 0, `management-advice sentence(s) found: ${JSON.stringify(advisingSentences)}`);
 });
 
 test("branded-study note: brand name (if a source is used) never reaches the draft", async () => {
